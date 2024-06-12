@@ -1,0 +1,13 @@
+.DS_Store
+.idea
+.vscode
+data
+# python
+venv
+__pycache__
+# build
+build
+dist
+*.egg-info
+*.c
+*.so
