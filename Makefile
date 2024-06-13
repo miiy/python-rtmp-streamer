@@ -18,6 +18,7 @@ build:
 	$(BUILD_CMD)
 	@mkdir -p build/$(TARGET)
 	@cp -r build/lib.*/$(TARGET) build/
+	@find build/$(TARGET) -type d -name "__pycache__" -exec rm -r {} +
 	@cp src/$(TARGET)/__init__.py build/$(TARGET)
 	@cp src/$(TARGET)/*.pyi build/$(TARGET)
 #	build wheel
