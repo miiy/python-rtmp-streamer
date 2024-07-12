@@ -1,77 +1,68 @@
-import time
-import queue
-import logging
-import threading
 import numpy as np
-import multiprocessing as mp
-
-logger = logging.getLogger(__name__)
+from multiprocessing.shared_memory import SharedMemory
 
 
-class PacketThread(threading.Thread):
-    """ packet worker """
-    def __init__(self, packet_queue: mp.Queue, frame_queue: queue.Queue, audio_queue: queue.Queue,
-                 fps: int, sr: int):
-        super().__init__(daemon=True)
-        self.packet_queue = packet_queue
-        self.frame_queue = frame_queue
-        self.audio_queue = audio_queue
-        self.fps = fps
-        self.sr = sr
-        self.pause_event = threading.Event()
+class Packet:
+    def __init__(self, image_shape: tuple, image_dtype: np.dtype, image_size: int,
+                 audio_shape: tuple, audio_dtype: np.dtype, audio_size: int,
+                 name: str | None = None) -> None:
 
-    def run(self) -> None:
-        i = 0
-        start_time = time.time()
-        empty_audio = self.create_empty_audio(self.fps, self.sr)
-        while True:
-            if self.pause_event.is_set():
-                self.pause_event.wait()
-            try:
-                sh_frame, sh_audio = self.packet_queue.get(timeout=0.02)
-            except queue.Empty:
-                continue
-            except Exception as e:
-                logger.error("get packet error", exc_info=e)
-                break
+        self._image_shape = image_shape
+        self._image_dtype = image_dtype
+        self._image_size = image_size
 
-            frame = sh_frame.array
-            audio = sh_audio.array if sh_audio is not None else empty_audio
+        self._audio_shape = audio_shape
+        self._audio_dtype = audio_dtype
+        self._audio_size = audio_size
 
-            self.frame_queue.put(frame.tobytes())
-            self.audio_queue.put(audio.tobytes())
-
-            sh_frame.close()
-            sh_frame.unlink()
-            if sh_audio is not None:
-                sh_audio.close()
-                sh_audio.unlink()
-
-            # 帧率是否超时
-            if i == 25:
-                total_time = time.time() - start_time
-                i = 0
-                start_time = time.time()
-                if total_time >= 1.02:
-                    logger.warning(f"push time: {total_time}")
-            i += 1
-
-    def clear_queue(self) -> None:
-        self.pause_event.set()
-        try:
-            while self.packet_queue.qsize() > 25:
-                self.packet_queue.get()
-        except NotImplementedError:
-            pass
-        while self.frame_queue.qsize() > 0:
-            self.frame_queue.get()
-        while self.audio_queue.qsize() > 0:
-            self.audio_queue.get()
-        self.pause_event.clear()
+        if name:
+            self._shm = SharedMemory(name=name, create=False)
+        else:
+            self._shm = SharedMemory(create=True, size=image_size + audio_size)
 
     @classmethod
-    def create_empty_audio(cls, fps: int, sr: int) -> np.ndarray:
-        wav_frame_num = int(sr / fps)
-        audio = np.zeros(wav_frame_num, dtype=np.int16)
-        return audio
+    def create(cls, image: np.ndarray, audio: np.ndarray) -> "Packet":
+        arr = cls(image.shape, image.dtype, image.nbytes, audio.shape, audio.dtype, audio.nbytes)
+        arr._shm.buf[:image.nbytes] = image.tobytes()
+        arr._shm.buf[image.nbytes:image.nbytes + audio.nbytes] = audio.tobytes()
+        return arr
 
+    def image(self) -> bytes:
+        return bytes(self._shm.buf[:self._image_size])
+
+    def audio(self) -> bytes:
+        return bytes(self._shm.buf[self._image_size:self._image_size + self._audio_size])
+
+    def image_numpy(self) -> np.ndarray:
+        return np.ndarray(self._image_shape, dtype=self._image_dtype, buffer=self._shm.buf[:self._image_size])
+
+    def audio_numpy(self) -> np.ndarray:
+        return np.ndarray(self._audio_shape, dtype=self._audio_dtype,
+                          buffer=self._shm.buf[self._image_size:self._image_size + self._audio_size])
+
+    def close(self) -> None:
+        self._shm.close()
+
+    def unlink(self) -> None:
+        self._shm.unlink()
+
+    def __del__(self):
+        self._shm.close()
+
+    def __getstate__(self):
+        return (self._image_shape, self._image_dtype, self._image_size,
+                self._audio_shape, self._audio_dtype, self._audio_size,
+                self._shm.name)
+
+    def __setstate__(self, state):
+        self.__init__(*state)
+
+
+def create_empty_audio(fps: int, sr: int) -> np.ndarray:
+    """
+    create empty audio
+    empty_audio = create_empty_audio(fps, sr)
+    """
+    wav_frame_num = int(sr / fps)
+    audio = np.zeros(wav_frame_num, dtype=np.int16)
+    return audio

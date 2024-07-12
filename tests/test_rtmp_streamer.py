@@ -6,9 +6,9 @@ import threading
 import unittest
 import numpy as np
 import multiprocessing as mp
-import shared_ndarray as sn
 
 from rtmp_streamer.streamer import Streamer
+from rtmp_streamer.packet import Packet, create_empty_audio
 
 
 logging.basicConfig(level=logging.DEBUG)
@@ -22,50 +22,58 @@ def load_audio(path: str):
     return aud
 
 
-def producer(q: mp.Queue) -> None:
-    # video picture
-    cap = cv2.VideoCapture("../data/test.mp4")
-    fps = cap.get(cv2.CAP_PROP_FPS)
+def print_frame_info(cap) -> None:
+    fps = int(cap.get(cv2.CAP_PROP_FPS))
     frame_width = cap.get(cv2.CAP_PROP_FRAME_WIDTH)
     frame_height = cap.get(cv2.CAP_PROP_FRAME_HEIGHT)
     frame_count = cap.get(cv2.CAP_PROP_FRAME_COUNT)
-    logging.info(f"cap: fps: {fps}, frame_width: {frame_width}, frame_height: {frame_height}, frame_count: {frame_count}")
+    print(f"cap: fps: {fps}, frame_width: {frame_width}, frame_height: {frame_height}, frame_count: {frame_count}")
 
-    # audio
-    aud = load_audio("../data/test.wav")
-    wav_frame_num = int(44100 / fps)
-    aud_len = len(aud)
-    logging.info(f"aud: len: {aud_len}, wav_frame_num: {wav_frame_num}")
 
-    # handle frame data
+def producer(q: mp.Queue) -> None:
+    # video picture
+    cap = cv2.VideoCapture("../data/test.mp4")
+    fps = int(cap.get(cv2.CAP_PROP_FPS))
+    print_frame_info(cap)
+
+    # cap frame data
     frames = []
     while cap.isOpened():
         ret, frame = cap.read()
         if not ret:
-            logging.info("Opening camera is failed")
+            print("Opening camera is failed")
             break
         frames.append(frame)
 
-    logging.info("data loaded")
+    # audio
+    aud = load_audio("../data/test.wav")
+    sr = 44100
+    wav_frame_num = int(sr / fps)
+    aud_len = len(aud)
+    print(f"aud: len: {aud_len}, wav_frame_num: {wav_frame_num}")
+    aud_empty = create_empty_audio(fps, sr)
 
-    # push
-    aud_empty = np.zeros(wav_frame_num, dtype=np.int16)
-
+    audios = []
     aud_idx = 0
-    start_time = time.time()
     for i in range(len(frames)):
         audio_frame = aud_empty.copy()
         if aud_idx < aud_len:
-            aud_end = aud_idx+wav_frame_num
+            aud_end = aud_idx + wav_frame_num
             if aud_end > aud_len:
                 aud_end = aud_len
             audio_frame = aud[aud_idx:aud_end]
             aud_idx = aud_end
+        audios.append(audio_frame)
 
-        frame = frames[i]
-        sh_frame = sn.from_numpy(frame)
-        sh_audio = sn.from_numpy(audio_frame)
-        packet = (sh_frame, sh_audio)
+    print("data loaded")
+
+    # push
+    print(f"start time: {time.time()}")
+    start_time = time.time()
+    for i in range(len(frames)):
+        packet = Packet.create(frames[i], audios[i])
+        if q.full():
+            start_time = time.time()
         q.put(packet)
 
         # send time
@@ -73,20 +81,18 @@ def producer(q: mp.Queue) -> None:
             total_time = time.time() - start_time
             start_time = time.time()
             print(f"send time: {total_time}")
-
-
-def get_status(stop_monitor_event: threading.Event, obj):
-    print(f"{obj.get_status()}")
-    while not stop_monitor_event.is_set():
-        status = obj.get_status()
-        print(f"{status}")
-        time.sleep(0.5)
+        # test stop
+        # if i > 0 and i % 100 == 0:
+        #     print(f"sleep: {i}")
+        #     time.sleep(10)
 
 
 class StreamerTestCase(unittest.TestCase):
 
     def test_run(self):
         mp.set_start_method('spawn')
+
+        stop_event = threading.Event()
 
         packet_queue = mp.Queue(maxsize=50)
         p_process = mp.Process(target=producer, args=(packet_queue,))
@@ -97,16 +103,15 @@ class StreamerTestCase(unittest.TestCase):
         sr = 44100
         frame_width = 1080
         frame_height = 1920
-        ffmpeg_cmd = Streamer.ffmpeg_command(push_url, fps, frame_width, frame_height)
-        streamer = Streamer(packet_queue, fps, sr, ffmpeg_cmd)
-        stop_monitor_event = threading.Event()
-        status_thread = threading.Thread(target=get_status, args=(stop_monitor_event, streamer,))
-        status_thread.start()
-        streamer.run()
-        print("stop monitor")
-        stop_monitor_event.set()
+        streamer = Streamer(packet_queue, stop_event, push_url, frame_width, frame_height, fps=fps)
 
-        self.assertEqual(True, True)
+        while True:
+            if not packet_queue.empty():
+                streamer_thread = threading.Thread(target=streamer.run, daemon=True)
+                streamer_thread.start()
+                streamer_thread.join()
+                print(f"streamer process end: {time.time()}")
+            time.sleep(0.1)
 
 
 if __name__ == '__main__':
