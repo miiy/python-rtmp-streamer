@@ -101,6 +101,7 @@ class Streamer:
         stop_event.set()
 
         # stop ffmpeg process
+        ffmpeg_process.stdin.close()
         ffmpeg_process.terminate()
         # wait process exit
         try:

@@ -4,7 +4,7 @@ import logging
 import threading
 from typing import Union
 import multiprocessing as mp
-from .packet import Packet
+import shared_ndarray as sn
 
 logger = logging.getLogger(__name__)
 
@@ -25,16 +25,16 @@ class PacketThread(threading.Thread):
             if self._clear_event.is_set():
                 self._clear_event.wait()
             try:
-                packet: Packet = self._packet_queue.get(timeout=0.01)
+                packet: sn.SharedNDArray = self._packet_queue.get(timeout=0.01)
             except queue.Empty:
                 continue
             except Exception as e:
                 logger.error("get packet error", exc_info=e)
                 break
 
-            image = packet.image()
-            audio = packet.audio()
-            self._frame_queue.put(image)
+            frame = packet.get("frame")
+            audio = packet.get("audio")
+            self._frame_queue.put(frame)
             self._audio_queue.put(audio)
 
             packet.close()
@@ -66,9 +66,9 @@ class PacketThread(threading.Thread):
         self._clear_event.clear()
 
     @classmethod
-    def clear_queue(cls, q: Union[queue.Queue, mp.Queue], is_free: bool = False) -> None:
+    def clear_queue(cls, q: Union[queue.Queue, mp.Queue], is_shared: bool = False) -> None:
         while not q.empty():
-            if is_free:
+            if is_shared:
                 data = q.get()
                 data.close()
                 data.unlink()

@@ -7,8 +7,9 @@ import unittest
 import numpy as np
 import multiprocessing as mp
 
+import shared_ndarray as sn
 from rtmp_streamer.streamer import Streamer
-from rtmp_streamer.packet import Packet, create_empty_audio
+from rtmp_streamer import audio
 
 
 logging.basicConfig(level=logging.DEBUG)
@@ -44,6 +45,7 @@ def producer(q: mp.Queue) -> None:
             print("Opening camera is failed")
             break
         frames.append(frame)
+    cap.release()
 
     # audio
     aud = load_audio("../data/test.wav")
@@ -51,7 +53,7 @@ def producer(q: mp.Queue) -> None:
     wav_frame_num = int(sr / fps)
     aud_len = len(aud)
     print(f"aud: len: {aud_len}, wav_frame_num: {wav_frame_num}")
-    aud_empty = create_empty_audio(fps, sr)
+    aud_empty = audio.create_empty_audio(fps, sr)
 
     audios = []
     aud_idx = 0
@@ -71,10 +73,11 @@ def producer(q: mp.Queue) -> None:
     print(f"start time: {time.time()}")
     start_time = time.time()
     for i in range(len(frames)):
-        packet = Packet.create(frames[i], audios[i])
+        packet = sn.from_numpy(arr=None, frame=frames[i], audio=audios[i])
         if q.full():
             start_time = time.time()
         q.put(packet)
+        packet.close()
 
         # send time
         if i % 25 == 0:
