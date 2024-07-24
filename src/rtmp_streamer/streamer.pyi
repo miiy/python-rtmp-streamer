@@ -14,11 +14,10 @@ class Streamer:
     _frame_height: int
     _fps: int
 
-    def __init__(self, packet_queue: mp.Queue, stop_event: threading.Event,
+    def __init__(self, packet_queue: mp.Queue,
                  push_url: str, frame_width: int, frame_height: int, fps: int = 25):
         """
         :param packet_queue: The maxsize of the queue should be set
-        :param stop_event:
         :param push_url:
         :param frame_width:
         :param frame_height:
@@ -29,3 +28,5 @@ class Streamer:
     def run(self) -> None: ...
 
     def ffmpeg_command(self) -> list[str]: ...
+
+    def stop(self) -> None: ...

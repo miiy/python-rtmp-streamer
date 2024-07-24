@@ -28,11 +28,11 @@ class Streamer:
     FRAME_PIPE_PATH = "frame_pipe"
     AUDIO_PIPE_PATH = "audio_pipe"
 
-    def __init__(self, packet_queue: mp.Queue, stop_event: threading.Event,
+    def __init__(self, packet_queue: mp.Queue,
                  push_url: str, frame_width: int, frame_height: int, fps: int = 25):
         """ init """
         self._packet_queue = packet_queue
-        self._stop_event = stop_event
+        self._stop_event = threading.Event()
 
         self._push_url = push_url
         self._frame_width = frame_width
@@ -154,6 +154,9 @@ class Streamer:
                    '-r', str(self._fps),
                    self._push_url]
         return command
+
+    def stop(self) -> None:
+        self._stop_event.set()
 
 
 def _mp_safe_qsize(q: mp.Queue) -> int:

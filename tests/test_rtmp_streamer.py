@@ -95,8 +95,6 @@ class StreamerTestCase(unittest.TestCase):
     def test_run(self):
         mp.set_start_method('spawn')
 
-        stop_event = threading.Event()
-
         packet_queue = mp.Queue(maxsize=50)
         p_process = mp.Process(target=producer, args=(packet_queue,))
         p_process.start()
@@ -106,7 +104,7 @@ class StreamerTestCase(unittest.TestCase):
         sr = 44100
         frame_width = 1080
         frame_height = 1920
-        streamer = Streamer(packet_queue, stop_event, push_url, frame_width, frame_height, fps=fps)
+        streamer = Streamer(packet_queue, push_url, frame_width, frame_height, fps=fps)
 
         while True:
             if not packet_queue.empty():
