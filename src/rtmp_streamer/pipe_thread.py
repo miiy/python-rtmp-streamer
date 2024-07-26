@@ -24,7 +24,7 @@ class PipeThread(threading.Thread):
         # open named pipe
         # Notice: if read not ready, open will block
         fd_pipe = os.open(self._pipe_name, os.O_WRONLY)
-        logging.debug(f"fd opened: {self._pipe_name}")
+        logger.debug(f"fd opened: {self._pipe_name}")
 
         while not self._stop_event.is_set():
             # no blocking read queue
@@ -33,7 +33,7 @@ class PipeThread(threading.Thread):
             except queue.Empty:
                 # if time > 1 second, break
                 if time.time() - self._last_time > 1:
-                    logging.debug(f"{self._pipe_name} queue empty over 1s.")
+                    logger.debug(f"{self._pipe_name} queue empty over 1s.")
                     break
                 # retry
                 continue

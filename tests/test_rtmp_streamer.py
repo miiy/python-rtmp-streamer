@@ -106,13 +106,9 @@ class StreamerTestCase(unittest.TestCase):
         frame_height = 1920
         streamer = Streamer(packet_queue, push_url, frame_width, frame_height, fps=fps)
 
-        while True:
-            if not packet_queue.empty():
-                streamer_thread = threading.Thread(target=streamer.run, daemon=True)
-                streamer_thread.start()
-                streamer_thread.join()
-                print(f"streamer process end: {time.time()}")
-            time.sleep(0.1)
+        streamer_thread = threading.Thread(target=streamer.run, daemon=True)
+        streamer_thread.start()
+        streamer_thread.join()
 
 
 if __name__ == '__main__':

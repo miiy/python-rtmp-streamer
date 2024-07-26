@@ -11,17 +11,19 @@ logger = logging.getLogger(__name__)
 
 class PacketThread(threading.Thread):
     """ packet worker """
-    def __init__(self, packet_queue: mp.Queue, frame_queue: queue.Queue, audio_queue: queue.Queue):
+    def __init__(self, packet_queue: mp.Queue, frame_queue: queue.Queue, audio_queue: queue.Queue, stop_event: threading.Event):
         super().__init__(daemon=True)
         self._packet_queue = packet_queue
         self._frame_queue = frame_queue
         self._audio_queue = audio_queue
+
         self._clear_event = threading.Event()
+        self._stop_event = stop_event
 
     def run(self) -> None:
         i = 0
         start_time = time.time()
-        while True:
+        while not self._stop_event.is_set():
             if self._clear_event.is_set():
                 self._clear_event.wait()
             try:

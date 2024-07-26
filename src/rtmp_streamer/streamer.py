@@ -5,7 +5,6 @@ import logging
 import threading
 import subprocess
 import multiprocessing as mp
-
 from .packet_thread import PacketThread
 from .pipe_thread import PipeThread
 
@@ -32,12 +31,21 @@ class Streamer:
                  push_url: str, frame_width: int, frame_height: int, fps: int = 25):
         """ init """
         self._packet_queue = packet_queue
-        self._stop_event = threading.Event()
+        self._packet_thread = None
 
         self._push_url = push_url
         self._frame_width = frame_width
         self._frame_height = frame_height
         self._fps = fps
+
+        self._frame_queue = queue.Queue(maxsize=50)
+        self._frame_thread = None
+        self._audio_queue = queue.Queue(maxsize=50)
+        self._audio_thread = None
+        self._ffmpeg_process = None
+
+        self._stop_task_event = threading.Event()
+        self._stop_event = threading.Event()
 
     def run(self) -> None:
         """
@@ -49,26 +57,39 @@ class Streamer:
         停止1个，三个全部停止。
         如果packet_queue里有数据，重启开启
         """
-        if self._packet_queue.empty():
-            logger.debug("packet_queue is empty")
-            return
-
-        stop_event = threading.Event()
-        frame_queue = queue.Queue(maxsize=50)
-        audio_queue = queue.Queue(maxsize=50)
-
+        logger.debug("run")
         # packet thread
-        packet_thread = PacketThread(self._packet_queue, frame_queue, audio_queue)
-        packet_thread.start()
+        self._packet_thread = PacketThread(self._packet_queue, self._frame_queue, self._audio_queue, self._stop_event)
+        self._packet_thread.start()
         logger.debug("packet thread started")
 
-        # start task
+        while not self._stop_event.is_set():
+            if self._packet_queue.empty():
+                logger.debug("packet_queue is empty")
+                time.sleep(0.2)
+                continue
+
+            # start task
+            self._start_task()
+
+            # process status
+            while not self._stop_task_event.is_set():
+                # if packet thread is dead, stop all
+                if self._ffmpeg_process.poll() is not None or not self._frame_thread.is_alive() or not self._audio_thread.is_alive():
+                    break
+                time.sleep(0.1)
+
+            # stop task
+            self._stop_task()
+
+    def _start_task(self) -> None:
+        """ start task """
         # frame thread, audio_thread：创建两个线程，分别将视频流和音频流写入"named pipes"
-        frame_thread = PipeThread(frame_queue, self.FRAME_PIPE_PATH, self._stop_event)
-        audio_thread = PipeThread(audio_queue, self.AUDIO_PIPE_PATH, self._stop_event)
-        frame_thread.start()
+        self._frame_thread = PipeThread(self._frame_queue, self.FRAME_PIPE_PATH, self._stop_task_event)
+        self._audio_thread = PipeThread(self._audio_queue, self.AUDIO_PIPE_PATH, self._stop_task_event)
+        self._frame_thread.start()
         logger.debug("frame thread started")
-        audio_thread.start()
+        self._audio_thread.start()
         logger.debug("audio thread started")
 
         # wait ready
@@ -76,43 +97,38 @@ class Streamer:
             time.sleep(0.01)
 
         # start ffmpeg command subprocess
-        ffmpeg_process = subprocess.Popen(self.ffmpeg_command(), stdin=subprocess.PIPE, shell=False)
+        self._ffmpeg_process = subprocess.Popen(self.ffmpeg_command(), stdin=subprocess.PIPE, shell=False)
         logger.debug("ffmpeg subprocess started")
 
-        # process status
-        debug_time = time.time()
-        while not self._stop_event.is_set():
-            if time.time() - debug_time > 0.5:
-                debug_time = time.time()
-                packet_qsize = _mp_safe_qsize(self._packet_queue)
-                frame_qsize = frame_queue.qsize()
-                audio_qsize = audio_queue.qsize()
-                logger.debug(f"packet_qsize: {packet_qsize}, frame_qsize: {frame_qsize}, audio_qsize: {audio_qsize}")
-
-            # if packet thread is dead, stop all
-            if ffmpeg_process.poll() is not None or not frame_thread.is_alive() or not audio_thread.is_alive():
-                break
-
-            time.sleep(0.1)
-
-        # stop task
-
-        # set stop event
-        stop_event.set()
+    def _stop_task(self) -> None:
+        # set stop task event
+        self._stop_task_event.set()
 
         # stop ffmpeg process
-        ffmpeg_process.stdin.close()
-        ffmpeg_process.terminate()
+        self._ffmpeg_process.stdin.close()
+        self._ffmpeg_process.terminate()
         # wait process exit
         try:
-            ffmpeg_process.wait(timeout=1)
+            self._ffmpeg_process.wait(timeout=1)
         except subprocess.TimeoutExpired:
             logger.exception("ffmpeg didn't terminate in time, killing it.")
-            ffmpeg_process.kill()
+            self._ffmpeg_process.kill()
 
         # wait exit
-        frame_thread.join()
-        audio_thread.join()
+        self._frame_thread.join()
+        self._audio_thread.join()
+
+    def get_packet_queue_qsize(self) -> int:
+        try:
+            return self._packet_queue.qsize()
+        except NotImplementedError:
+            return 0
+
+    def get_frame_queue_qsize(self) -> int:
+        return self._frame_queue.qsize()
+
+    def get_audio_queue_qsize(self) -> int:
+        return self._audio_queue.qsize()
 
     def ffmpeg_command(self) -> list[str]:
         """
