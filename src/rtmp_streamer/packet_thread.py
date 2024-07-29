@@ -4,7 +4,9 @@ import logging
 import threading
 from typing import Union
 import multiprocessing as mp
+
 import shared_ndarray as sn
+
 
 logger = logging.getLogger(__name__)
 
@@ -46,7 +48,7 @@ class PacketThread(threading.Thread):
             if i % 25 == 0:
                 total_time = time.time() - start_time
                 start_time = time.time()
-                logger.debug(f"push time: {total_time}")
+                logger.debug(f"packet time: {total_time}")
             i = i + 1 if i < 10000 else 0
 
     def clear_all_queue(self) -> None:
@@ -70,9 +72,11 @@ class PacketThread(threading.Thread):
     @classmethod
     def clear_queue(cls, q: Union[queue.Queue, mp.Queue], is_shared: bool = False) -> None:
         while not q.empty():
+            try:
+                data = q.get(timeout=0.1)
+            except queue.Empty:
+                continue
+
             if is_shared:
-                data = q.get()
                 data.close()
                 data.unlink()
-            else:
-                q.get()
