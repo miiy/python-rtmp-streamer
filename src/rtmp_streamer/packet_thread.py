@@ -71,11 +71,11 @@ class PacketThread(threading.Thread):
 
     @classmethod
     def clear_queue(cls, q: Union[queue.Queue, mp.Queue], is_shared: bool = False) -> None:
-        while not q.empty():
+        while True:
             try:
-                data = q.get(timeout=0.1)
+                data = q.get(timeout=0.02)
             except queue.Empty:
-                continue
+                break
 
             if is_shared:
                 data.close()

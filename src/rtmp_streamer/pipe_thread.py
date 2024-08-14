@@ -29,11 +29,11 @@ class PipeThread(threading.Thread):
         while not self._stop_event.is_set():
             # no blocking read queue
             try:
-                data = self._q.get(timeout=0.04)
+                data = self._q.get(timeout=0.02)
             except queue.Empty:
                 # if time > 1 second, break
-                if time.time() - self._last_time > 1:
-                    logger.debug(f"{self._pipe_name} queue empty over 1s.")
+                if time.time() - self._last_time > 2:
+                    logger.debug(f"{self._pipe_name} queue empty over 2s.")
                     break
                 # retry
                 continue

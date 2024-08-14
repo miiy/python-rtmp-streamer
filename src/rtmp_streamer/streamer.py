@@ -69,7 +69,7 @@ class Streamer:
         while not self._stop_event.is_set():
             if self._packet_queue.empty():
                 logger.debug("packet_queue is empty")
-                time.sleep(0.2)
+                time.sleep(0.1)
                 continue
 
             # start task
