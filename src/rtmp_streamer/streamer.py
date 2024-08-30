@@ -68,8 +68,7 @@ class Streamer:
         max_sleep = 5
         while not self._stop_event.is_set():
             if self._packet_queue.empty():
-                logger.debug("packet_queue is empty")
-                time.sleep(0.1)
+                time.sleep(0.01)
                 continue
 
             # start task
@@ -152,10 +151,11 @@ class Streamer:
 
         -i 输入
         -g 关键帧（I帧）间隔， 实时传输通常1-5之间
+        -ac 音频通道数
         """
         command = ['ffmpeg',
                    # '-thread_queue_size', '128',
-                   '-thread_queue_size', '8',
+                   # '-thread_queue_size', '8',
                    # '-loglevel', 'info',
                    # '-loglevel', 'debug',
                    # '-y', '-an',

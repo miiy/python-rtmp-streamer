@@ -48,7 +48,8 @@ class PacketThread(threading.Thread):
             if i % 25 == 0:
                 total_time = time.time() - start_time
                 start_time = time.time()
-                logger.debug(f"packet time: {total_time}")
+                if total_time > 1.01:
+                    logger.warn(f"packet time: {total_time}")
             i = i + 1 if i < 10000 else 0
 
     def clear_all_queue(self) -> None:
